@@ -2,7 +2,7 @@ const fs = require('fs');
 const axios = require('axios');
 const parser = require('node-html-parser');
 
-const DEBUGGING = true;
+const DEBUGGING = false;
 const BASE_URL = "https://wooordhunt.ru"
 const DICTIONARY_URL = BASE_URL + "/word/";
 const VOCABULARY_FILE_NAME = 'vocabulary.txt';
@@ -40,12 +40,16 @@ function buildAnkiCards(responses) {
     }
 
     debug(`payloads length: ${notes.length}`);
+
+    debug("notes: " + JSON.stringify(notes))
+
+    console.info(`INFO: Order to build ${notes.length} note(s) was passed to Anki. Please wait...`);
     
     axios.post(ANKI_URL, {
-        "action": "addNotes",
+        "action": "multi",
         "version": 6,
         "params": {
-            "notes": notes
+            "actions": notes
         }
     })
     .then(function (response) {
@@ -60,21 +64,22 @@ function buildAnkiCards(responses) {
         }
 
         for(let i = 0; i < notes.length; i++) {
-            let result = response.data.result[i];
-            if(result != null) {
-                console.info(`${notes[i].fields.Term} >> OK`);
+            let actionResponse = response.data.result[i];
+            let term = notes[i].params.note.fields.Term;
+            if(actionResponse.error == null) {
+                console.info(`INFO: ${term} >> OK`);
             } else {
-                console.error(`${notes[i].fields.Term} >> ERROR`);
+                console.error(`ERROR: ${term} >> ${actionResponse.error}`);
             }
         } 
     })
     .catch(function (error) {
-        console.error(error.cause);
+        console.error(`${error}`);
     });
 }
 
 function transformToNote(response) {
-    return buildNote(retrieveTermData(response));
+    return assembleNote(retrieveTermData(response));
 }
 
 function retrieveTermData(response) {
@@ -110,42 +115,47 @@ function retrieveTermData(response) {
     for (let i = 0; i < len; i++) {
         examples[i] = exampleElements[i].text.trim();
     }
-    let example = examples.join(BREAKER);
+    let example = (examples.length == 0) ? term : examples.join(BREAKER);
     debug(example);
 
     return { term, transcription, definition, example, audioUrl };
 }
 
-function buildNote(data) {
+function assembleNote(data) {
     let fileName = data.audioUrl.slice(data.audioUrl.lastIndexOf("/"), data.audioUrl.length).trim();
     return {
-        "deckName": "Vocabulary",
-        "modelName": "Basic With Transcription (and reversed card)",
-        "fields": {
-            "Example": data.example,
-            "Term": data.term,
-            "Transcription": data.transcription,
-            "Definition": data.definition
-        },
-        "options": {
-            "allowDuplicate": false,
-            "duplicateScope": "deck",
-            "duplicateScopeOptions": {
+        "action": "addNote",
+        "params": {
+            "note": {
                 "deckName": "Vocabulary",
-                "checkChildren": false,
-                "checkAllModels": false
+                "modelName": "Basic With Transcription (and reversed card)",
+                "fields": {
+                    "Example": data.example,
+                    "Term": data.term,
+                    "Transcription": data.transcription,
+                    "Definition": data.definition
+                },
+                "options": {
+                    "allowDuplicate": false,
+                    "duplicateScope": "deck",
+                    "duplicateScopeOptions": {
+                        "deckName": "Vocabulary",
+                        "checkChildren": false,
+                        "checkAllModels": false
+                    }
+                },
+                "tags": [
+                    "Auto-anki"
+                ],
+                "audio": [{
+                    "url": data.audioUrl,
+                    "filename": fileName,
+                    "fields": [
+                        "Sound"
+                    ]
+                }]
             }
-        },
-        "tags": [
-            "Auto-anki"
-        ],
-        "audio": [{
-            "url": data.audioUrl,
-            "filename": fileName,
-            "fields": [
-                "Sound"
-            ]
-        }]
+        }
     };
 }
 
