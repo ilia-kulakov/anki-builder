@@ -2,7 +2,7 @@ const fs = require('fs');
 const axios = require('axios');
 const parser = require('node-html-parser');
 
-const DEBUGGING = false;
+const DEBUGGING = true;
 const BASE_URL = "https://wooordhunt.ru"
 const DICTIONARY_URL = BASE_URL + "/word/";
 const VOCABULARY_FILE_NAME = 'vocabulary.txt';
@@ -17,6 +17,7 @@ fs.readFile(VOCABULARY_FILE_NAME, 'utf8', async (err, data) => {
     var lines = data.split(/\r?\n|\r|\n/g);
     for (var i = 0; i < lines.length; i++) {
         if (!lines[i].includes(SPLITTER)) {
+            console.info(`WARNING: The record "${lines[i]}" does not match the template. Skipping...`);
             continue;
         }
         var term = lines[i].slice(1, lines[i].indexOf(SPLITTER)).trim();
@@ -43,9 +44,9 @@ async function buildAnkiCard(response) {
     if(audioSrcElement == null) {
         audioSrcElement = headerElement.querySelector('audio#audio_us_1 > source');
         if(audioSrcElement == null) {
-            console.info(`WARNING: Word ${term} has no american sound.`);
+            console.info(`WARNING: The term "${term}" has no american sound.`);
         } else {
-            console.info(`WARNING: Word ${term} has a few distinct american sounds.`);
+            console.info(`WARNING: The term "${term}" has a few distinct american sounds.`);
         }
         
     }
@@ -67,17 +68,11 @@ async function buildAnkiCard(response) {
 }
 
 async function addAnkiNote(term, transcription, definition, examples, audioUrl) {
+    if(examples == "") {
+        examples = term;
+    }
     var payload = buildPayload(term, transcription, definition, examples, audioUrl);
-    // axios.post(ANKI_URL, payload)
-    //     .then((response) => {
-    //         if (response.data.result !== null) {
-    //             console.info(`${term} >> OK`);
-    //         } else {
-    //             console.error(`${term} >> ERROR`, response.data.error);
-    //         }
-    //     }, (error) => {
-    //         console.error(`${term} >> ERROR`, error.cause);
-    //     });
+    debug(`Payload: ${JSON.stringify(payload)}`);
     await tryAddAnkiNote(payload, 3);
     
 }
