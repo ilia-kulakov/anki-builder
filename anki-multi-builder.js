@@ -1,6 +1,7 @@
 const fs = require('fs');
 const axios = require('axios');
 const parser = require('node-html-parser');
+const cp = require('node:child_process');
 
 const DEBUGGING = false;
 const BASE_URL = "https://wooordhunt.ru"
@@ -9,25 +10,81 @@ const VOCABULARY_FILE_NAME = 'vocabulary.txt';
 const SPLITTER = "|";
 const BREAKER = "</br>";
 const ANKI_URL = "http:localhost:8765";
+const ANKI_APP_PATH = "C:\\Program Files\\Anki\\anki.exe";
 
-fs.readFile(VOCABULARY_FILE_NAME, 'utf8', async (err, data) => {
-    if (err) {
-        return console.error(err);
-    }
-    let lines = data.split(/\r?\n|\r|\n/g);
-    let terms = [];
-    for (let i = 0; i < lines.length; i++) {
-        if (!lines[i].includes(SPLITTER)) {
-            console.info(`WARNING: The record "${lines[i]}" does not match the template. Skipping...`);
-            continue;
-        }
-        terms.push(lines[i].slice(1, lines[i].indexOf(SPLITTER)).trim());        
-    }
-
-    debug(`${terms.length} terms were retrieved from records.`)
-    let responses = await Promise.all(terms.map((term) => axios.get(DICTIONARY_URL + term)));
-    buildAnkiCards(responses);
+runAnki();
+contactAnki(() => {
+    console.info("INFO: starting to transform the vocabulary list into Anki cards...");
+    transformVocabularyToCards(VOCABULARY_FILE_NAME);
 });
+
+async function runAnki() {
+    if(!(await pingAnki())) {
+        cp.execFile(`"${ANKI_APP_PATH}"`, {shell:true, windowsHide: true});
+    }
+}
+
+async function contactAnki(callback) {
+    const isReady = await waitAnki(5);
+
+    if(isReady) {
+        callback();        
+    } else {
+        console.error("ERROR: Could not find Anki.")
+    } 
+}
+
+async function waitAnki(attemptsNumber) {
+    for(let i = 0; i < attemptsNumber; i++) {
+        if(await pingAnki() === true) {
+            console.info(`INFO: Anki is ready`);
+            return true;
+        } else {
+            console.info(`INFO: Waiting for Anki launch...`);
+        }
+        await delay(1000);
+    }
+    return false;
+}       
+
+async function pingAnki() {
+    try {
+        let response = await axios.post(ANKI_URL, {
+            "action": "version",
+            "version": 6
+        });
+        if(response.status == 200 && response.data.result == 6) {
+            return true;
+        } else {
+            return false;
+        }
+    } catch (error) {
+        return false;
+    }
+}
+
+function transformVocabularyToCards(fileName) {
+
+    fs.readFile(fileName, 'utf8', async (err, data) => {
+        if (err) {
+            return console.error(err);
+        }
+        let lines = data.split(/\r?\n|\r|\n/g);
+        let terms = [];
+        for (let i = 0; i < lines.length; i++) {
+            if (!lines[i].includes(SPLITTER)) {
+                console.info(`WARNING: The record "${lines[i]}" does not match the template. Skipping...`);
+                continue;
+            }
+            terms.push(lines[i].slice(1, lines[i].indexOf(SPLITTER)).trim());        
+        }
+
+        debug(`${terms.length} terms were retrieved from records.`)
+        let responses = await Promise.all(terms.map((term) => axios.get(DICTIONARY_URL + term)));
+        buildAnkiCards(responses);
+    });
+
+}
 
 function buildAnkiCards(responses) {
     let notes = [];
@@ -67,11 +124,12 @@ function buildAnkiCards(responses) {
             let actionResponse = response.data.result[i];
             let term = notes[i].params.note.fields.Term;
             if(actionResponse.error == null) {
-                console.info(`INFO: ${term} >> OK`);
+                console.info(`INFO: ${i+1}. ${term} >> OK`);
             } else {
-                console.error(`ERROR: ${term} >> ${actionResponse.error}`);
+                console.error(`ERROR: ${i+1}. ${term} >> ${actionResponse.error}`);
             }
-        } 
+        }
+        console.info('INFO: Finish. Please close the Anki application or press Ctrl+C');
     })
     .catch(function (error) {
         console.error(`${error}`);
