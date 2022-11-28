@@ -165,7 +165,10 @@ function retrieveTermData(response) {
     debug(audioUrl);
     let contentElement = docElement.querySelector('div#content_in_russian');
     let definitionElement = contentElement.querySelector('div.t_inline_en');
-    let definition = definitionElement.text;
+    let definition = (definitionElement) ? definitionElement.text : "";
+    if(!definition.length) {
+        console.warn("WARNING: The definition is empty.")
+    }
     debug(definition)
     let exampleElements = contentElement.querySelectorAll('p.ex_o');
     let len = Math.min(3, exampleElements.length);
