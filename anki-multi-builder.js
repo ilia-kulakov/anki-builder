@@ -211,13 +211,12 @@ async function downloadFile(fileUrl) {
     } catch {
         return null;
     }
-    const dir = __dirname.replaceAll("\\", "/");
-    return "file:///" + dir + "/" + fileName;
+    return __dirname + "\\" + fileName;
 }
 
 async function assembleNote(data) {
-    const audioUrl = await downloadFile(data.audioUrl);
-    const fileName = audioUrl != null ? audioUrl.slice(audioUrl.lastIndexOf("/"), audioUrl.length).trim() : null;
+    const audioPath = await downloadFile(data.audioUrl);
+    const audioName = audioPath != null ? audioPath.slice(audioPath.lastIndexOf("\\") + 1, audioPath.length).trim() : null;
     return {
         "action": "addNote",
         "params": {
@@ -244,8 +243,8 @@ async function assembleNote(data) {
                     "Auto-anki"
                 ],
                 "audio": [{
-                    "url": audioUrl,
-                    "filename": fileName,
+                    "path": audioPath,
+                    "filename": audioName,
                     "fields": [
                         "Sound"
                     ]
