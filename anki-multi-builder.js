@@ -1,7 +1,9 @@
 const fs = require('fs');
+const https = require('https');
 const axios = require('axios');
 const parser = require('node-html-parser');
 const cp = require('node:child_process');
+
 
 const DEBUGGING = false;
 const BASE_URL = "https://wooordhunt.ru"
@@ -9,8 +11,11 @@ const DICTIONARY_URL = BASE_URL + "/word/";
 const VOCABULARY_FILE_NAME = 'vocabulary.txt';
 const SPLITTER = "|";
 const BREAKER = "</br>";
-const ANKI_URL = "http:localhost:8765";
-const ANKI_APP_PATH = "C:\\Program Files\\Anki\\anki.exe";
+const ANKI_URL = "http://127.0.0.1:8765";
+const ANKI_APP_PATH = "C:\\apps\\anki\\anki.exe";
+const httpsAgent = new https.Agent({
+    rejectUnauthorized: false,
+});
 
 runAnki();
 contactAnki(() => {
@@ -49,16 +54,20 @@ async function waitAnki(attemptsNumber) {
 
 async function pingAnki() {
     try {
+        console.info("Post request")
         let response = await axios.post(ANKI_URL, {
             "action": "version",
             "version": 6
         });
         if(response.status == 200 && response.data.result == 6) {
+            console.info("Recieve 200")
             return true;
         } else {
+            console.info("Recieve error")
             return false;
         }
     } catch (error) {
+        console.error("Error: ", error);
         return false;
     }
 }
@@ -80,17 +89,18 @@ function transformVocabularyToCards(fileName) {
         }
 
         debug(`${terms.length} terms were retrieved from records.`)
-        let responses = await Promise.all(terms.map((term) => axios.get(DICTIONARY_URL + term)));
+        let responses = await Promise.all(terms.map((term) => axios.get(DICTIONARY_URL + term, { httpsAgent })));
         buildAnkiCards(responses);
     });
 
 }
 
-function buildAnkiCards(responses) {
+async function buildAnkiCards(responses) {
     let notes = [];
     for(const response of responses) {
         if (response.status == 200) {
-            notes.push(transformToNote(response));
+            const note = await transformToNote(response);
+            notes.push(note);
         } else {
             console.error(`ERROR: ${response.statusText}`);
         };
@@ -136,16 +146,16 @@ function buildAnkiCards(responses) {
     });
 }
 
-function transformToNote(response) {
-    return assembleNote(retrieveTermData(response));
+async function transformToNote(response) {
+    return await assembleNote(retrieveTermData(response));
 }
 
 function retrieveTermData(response) {
     let docElement = parser.parse(response.data);
     let headerElement = docElement.querySelector('div#wd_title');
-    let termElement = headerElement.querySelector('h1');
+    let termElement = headerElement.querySelector('h2');
     let termInnerHtml = termElement.innerHTML;
-    let term = termInnerHtml.slice(0, termInnerHtml.indexOf("<")).trim();
+    let term = termInnerHtml;//termInnerHtml.slice(0, termInnerHtml.indexOf("<")).trim();
     debug(term);
     let transcriptionElement = headerElement.querySelector('div#us_tr_sound > span.transcription');
     let transcription = transcriptionElement.text.trim();
@@ -171,19 +181,43 @@ function retrieveTermData(response) {
     }
     debug(definition)
     let exampleElements = contentElement.querySelectorAll('p.ex_o');
+    let translatedExampleElements = contentElement.querySelectorAll('p.ex_t');
     let len = Math.min(3, exampleElements.length);
     let examples = [];
+    let translatedExamples = [];
     for (let i = 0; i < len; i++) {
         examples[i] = exampleElements[i].text.trim();
+        translatedExamples[i] = (!!translatedExampleElements[i]) ? translatedExampleElements[i].text.trim() : "";
     }
     let example = (examples.length == 0) ? term : examples.join(BREAKER);
     debug(example);
+    let translatedExample = (translatedExamples.length == 0) ? "" : translatedExamples.join(BREAKER);
+    debug(translatedExample);
 
-    return { term, transcription, definition, example, audioUrl };
+    return { term, transcription, definition, example, translatedExample, audioUrl };
 }
 
-function assembleNote(data) {
-    let fileName = data.audioUrl.slice(data.audioUrl.lastIndexOf("/"), data.audioUrl.length).trim();
+async function downloadFile(fileUrl) {
+    const fileName = fileUrl.slice(fileUrl.lastIndexOf("/") + 1, fileUrl.length).trim();   
+
+    try {
+        const response = await axios({
+            method: "get",
+            url: fileUrl,
+            responseType: "stream",
+            httpsAgent: httpsAgent
+        });
+        response.data.pipe(fs.createWriteStream(fileName));
+    } catch {
+        return null;
+    }
+    const dir = __dirname.replaceAll("\\", "/");
+    return "file:///" + dir + "/" + fileName;
+}
+
+async function assembleNote(data) {
+    const audioUrl = await downloadFile(data.audioUrl);
+    const fileName = audioUrl != null ? audioUrl.slice(audioUrl.lastIndexOf("/"), audioUrl.length).trim() : null;
     return {
         "action": "addNote",
         "params": {
@@ -192,6 +226,7 @@ function assembleNote(data) {
                 "modelName": "Basic With Transcription (and reversed card)",
                 "fields": {
                     "Example": data.example,
+                    "Translated Example": data.translatedExample,
                     "Term": data.term,
                     "Transcription": data.transcription,
                     "Definition": data.definition
@@ -209,7 +244,7 @@ function assembleNote(data) {
                     "Auto-anki"
                 ],
                 "audio": [{
-                    "url": data.audioUrl,
+                    "url": audioUrl,
                     "filename": fileName,
                     "fields": [
                         "Sound"
