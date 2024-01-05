@@ -133,12 +133,15 @@ async function buildAnkiCards(responses) {
         for(let i = 0; i < notes.length; i++) {
             let actionResponse = response.data.result[i];
             let term = notes[i].params.note.fields.Term;
+            
             if(actionResponse.error == null) {
                 console.info(`INFO: ${i+1}. ${term} >> OK`);
             } else {
                 console.error(`ERROR: ${i+1}. ${term} >> ${actionResponse.error}`);
             }
+            
         }
+        notes.map((note) => note.params.note.audio[0].path).forEach((filePath) => fs.unlinkSync(filePath));
         console.info('INFO: Finish. Please close the Anki application or press Ctrl+C');
     })
     .catch(function (error) {
@@ -251,7 +254,7 @@ async function assembleNote(data) {
                 }]
             }
         }
-    };
+    };    
 }
 
 
