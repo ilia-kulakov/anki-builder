@@ -156,7 +156,7 @@ async function transformToNote(response) {
 function retrieveTermData(response) {
     let docElement = parser.parse(response.data);
     let headerElement = docElement.querySelector('div#wd_title');
-    let termElement = headerElement.querySelector('h2');
+    let termElement = headerElement.querySelector('h1');
     let termInnerHtml = termElement.innerHTML;
     let term = termInnerHtml;//termInnerHtml.slice(0, termInnerHtml.indexOf("<")).trim();
     debug(term);
