@@ -1,1 +1,0 @@
-start "Anki Builder" cmd.exe /K node anki-multi-builder
