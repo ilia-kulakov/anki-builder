@@ -6,10 +6,9 @@ const cp = require('node:child_process');
 
 
 const DEBUGGING = false;
-const BASE_URL = "https://wooordhunt.ru"
-const DICTIONARY_URL = BASE_URL + "/word/";
-const VOCABULARY_FILE_NAME = 'vocabulary.txt';
-const SPLITTER = "|";
+const DICTIONARY_URL = "https://pl.wiktionary.org/wiki/";
+const PROTOCOL = "https:";
+const VOCABULARY_FILE_NAME = 'vocabulary-pl.txt';
 const BREAKER = "</br>";
 const ANKI_URL = "http://127.0.0.1:8765";
 const ANKI_APP_PATH = "C:\\apps\\anki\\anki.exe";
@@ -78,15 +77,7 @@ function transformVocabularyToCards(fileName) {
         if (err) {
             return console.error(err);
         }
-        let lines = data.split(/\r?\n|\r|\n/g);
-        let terms = [];
-        for (let i = 0; i < lines.length; i++) {
-            if (!lines[i].includes(SPLITTER)) {
-                console.info(`WARNING: The record "${lines[i]}" does not match the template. Skipping...`);
-                continue;
-            }
-            terms.push(lines[i].slice(1, lines[i].indexOf(SPLITTER)).trim());        
-        }
+        let terms = data.split(/\r?\n|\r|\n/g).map(term => term.trim()).filter(term => term.length > 0);
 
         debug(`${terms.length} terms were retrieved from records.`)
         let responses = await Promise.all(terms.map((term) => axios.get(DICTIONARY_URL + term, { httpsAgent })));
@@ -155,49 +146,34 @@ async function transformToNote(response) {
 
 function retrieveTermData(response) {
     let docElement = parser.parse(response.data);
-    let headerElement = docElement.querySelector('div#wd_title');
-    let termElement = headerElement.querySelector('h1');
-    let termInnerHtml = termElement.innerHTML;
-    let term = termInnerHtml;//termInnerHtml.slice(0, termInnerHtml.indexOf("<")).trim();
+    let term = docElement.querySelector(".mw-first-heading .mw-page-title-main")?.text;
     debug(term);
-    let transcriptionElement = headerElement.querySelector('div#us_tr_sound > span.transcription');
-    let transcription = transcriptionElement.text.trim();
+    let transcription = docElement.querySelector("span.ipa")?.text;
     debug(transcription);
-    let audioSrcElement = headerElement.querySelector('audio#audio_us > source');
-    if(audioSrcElement == null) {
-        audioSrcElement = headerElement.querySelector('audio#audio_us_1 > source');
-        if(audioSrcElement == null) {
-            console.info(`WARNING: The term "${term}" has no american sound.`);
-        } else {
-            console.info(`WARNING: The term "${term}" has a few distinct american sounds.`);
-        }
-        
+    let audioUrl = docElement.querySelector(".audiolink a")?.attributes?.href;
+    if(audioUrl.startsWith("//")) {
+        audioUrl = PROTOCOL + audioUrl;
     }
-    let audioUrl = (audioSrcElement == null) ? "" : BASE_URL + audioSrcElement.getAttribute("src");
-
     debug(audioUrl);
-    let contentElement = docElement.querySelector('div#content_in_russian');
-    let definitionElement = contentElement.querySelector('div.t_inline_en');
-    let definition = (definitionElement) ? definitionElement.text : "";
-    if(!definition.length) {
-        console.warn("WARNING: The definition is empty.")
-    }
+    let definition = "";
     debug(definition)
-    let exampleElements = contentElement.querySelectorAll('p.ex_o');
-    let translatedExampleElements = contentElement.querySelectorAll('p.ex_t');
-    let len = Math.min(3, exampleElements.length);
-    let examples = [];
-    let translatedExamples = [];
-    for (let i = 0; i < len; i++) {
-        examples[i] = exampleElements[i].text.trim();
-        translatedExamples[i] = (!!translatedExampleElements[i]) ? translatedExampleElements[i].text.trim() : "";
-    }
-    let example = (examples.length == 0) ? term : examples.join(BREAKER);
+    let examples = docElement.querySelector(".field-exampl")
+        .parentNode
+        .parentNode
+        .querySelectorAll('i')
+        .map(element => element.text)
+        .map(example => example.trim())
+        .filter(example => example.length > 0);
+    let example = (examples.length === 0) ? term : examples.join(BREAKER);
     debug(example);
-    let translatedExample = (translatedExamples.length == 0) ? "" : translatedExamples.join(BREAKER);
+    let translatedExample = "";
     debug(translatedExample);
+    let iconUrl = docElement.querySelector("figure img")?.attrs?.src;
+    if(iconUrl?.startsWith("//")) {
+        iconUrl = PROTOCOL + iconUrl;
+    }
 
-    return { term, transcription, definition, example, translatedExample, audioUrl };
+    return { term, transcription, definition, example, translatedExample, audioUrl, iconUrl };
 }
 
 async function downloadFile(fileUrl) {
@@ -224,7 +200,7 @@ async function assembleNote(data) {
         "action": "addNote",
         "params": {
             "note": {
-                "deckName": "Vocabulary",
+                "deckName": "Słownictwo",
                 "modelName": "Basic With Transcription (and reversed card)",
                 "fields": {
                     "Example": data.example,
@@ -237,7 +213,7 @@ async function assembleNote(data) {
                     "allowDuplicate": false,
                     "duplicateScope": "deck",
                     "duplicateScopeOptions": {
-                        "deckName": "Vocabulary",
+                        "deckName": "Słownictwo",
                         "checkChildren": false,
                         "checkAllModels": false
                     }
@@ -251,7 +227,17 @@ async function assembleNote(data) {
                     "fields": [
                         "Sound"
                     ]
-                }]
+                }],
+                picture: [
+                    {
+                        url: data.iconUrl,
+                        filename: data.iconUrl?.slice(
+                            data.iconUrl?.lastIndexOf('/') + 1,
+                            data.iconUrl?.length
+                        ),
+                        fields: ['Icon'],
+                    },
+                ],
             }
         }
     };    
