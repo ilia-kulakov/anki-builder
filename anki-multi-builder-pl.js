@@ -173,8 +173,10 @@ function retrieveTermData(response) {
     debug(term);
     let transcription = docElement.querySelector('span.ipa')?.text;
     debug(transcription);
-    let audioUrl = docElement.querySelector('.audiolink a')?.attributes?.href;
-    if (audioUrl.startsWith('//')) {
+    let audioUrl = docElement.querySelector('a.oo-ui-buttonElement-button')
+        ?.attributes?.href;
+    debug(audioUrl);
+    if (audioUrl?.startsWith('//')) {
         audioUrl = PROTOCOL + audioUrl;
     }
     debug(audioUrl);
@@ -208,7 +210,7 @@ function retrieveTermData(response) {
 
 async function downloadFile(fileUrl) {
     const fileName = fileUrl
-        .slice(fileUrl.lastIndexOf('/') + 1, fileUrl.length)
+        ?.slice(fileUrl?.lastIndexOf('/') + 1, fileUrl?.length)
         .trim();
 
     try {
